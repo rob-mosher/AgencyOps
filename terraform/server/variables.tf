@@ -61,6 +61,15 @@ variable "azure_monthly_limit" {
   default     = 150.0
 }
 
+variable "allowed_ip_ranges" {
+  description = "IP CIDR ranges allowed to access the MCP server. When set, all other IPs are denied."
+  type = list(object({
+    name             = string
+    ip_address_range = string
+  }))
+  default = []
+}
+
 variable "tags" {
   description = "Tags applied to all resources."
   type        = map(string)

@@ -168,13 +168,23 @@ resource "azurerm_container_app" "mcp_server" {
   }
 
   ingress {
-    external_enabled = true
-    target_port      = 8000
-    transport        = "http"
+    external_enabled           = true
+    target_port                = 8000
+    transport                  = "http"
+    allow_insecure_connections = false
 
     traffic_weight {
       percentage      = 100
       latest_revision = true
+    }
+
+    dynamic "ip_security_restriction" {
+      for_each = var.allowed_ip_ranges
+      content {
+        action           = "Allow"
+        ip_address_range = ip_security_restriction.value.ip_address_range
+        name             = ip_security_restriction.value.name
+      }
     }
   }
 

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-03
+
+### Added
+
+- HTTPS-only enforcement on ACA ingress (`allow_insecure_connections = false`)
+- IP allowlisting support via `allowed_ip_ranges` Terraform variable
+- Azure setup guide in README (spending limit, scoped service principal, API key generation)
+- Security section in ARCHITECTURE.md (defense-in-depth overview)
+
 ## [0.2.0] - 2026-03-03
 
 ### Changed
@@ -52,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - COLLABORATORS.md following the Collaborators Framework
 - MIT License
 
-[Unreleased]: https://github.com/rob-mosher/AgencyOps/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rob-mosher/AgencyOps/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/rob-mosher/AgencyOps/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rob-mosher/AgencyOps/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rob-mosher/AgencyOps/releases/tag/v0.1.0

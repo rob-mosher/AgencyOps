@@ -60,9 +60,33 @@ Wraps the Terraform CLI with structured Python interfaces. Provider-agnostic des
 - **Plan storage**: `{data_dir}/plans/{plan_id}.tfplan` + `.json` metadata
 - **JSON output**: Parses Terraform's `-json` flag output
 
+## Security
+
+### Defense in depth
+
+```
+Azure Spending Limit ─── platform-level hard stop (no surprise bills)
+        │
+IP Allowlisting ──────── network-level (ACA ingress rules)
+        │
+API Key (Bearer) ─────── application-level authentication
+        │
+Budget Tracker ───────── application-level provisioning limit
+        │
+Scoped Service Principal ── least-privilege (Contributor on workloads RG only)
+```
+
 ### Authentication
 
 MVP uses API key authentication via Bearer token header. The server validates `Authorization: Bearer <key>` on incoming requests.
+
+### Network restrictions
+
+ACA ingress supports IP allowlisting via `ip_security_restriction` blocks in `terraform/server/main.tf`. When the `allowed_ip_ranges` variable is populated, only specified CIDR ranges can reach the endpoint — all other traffic is denied.
+
+### Service principal scoping
+
+The Terraform service principal (`ARM_CLIENT_ID`/`ARM_CLIENT_SECRET`) should be scoped to **Contributor on the workloads resource group only**, not the entire subscription. This limits blast radius — a compromised credential can only affect workload containers, not the MCP server infrastructure or other Azure resources.
 
 ## Data Flow: Plan/Apply Cycle
 
