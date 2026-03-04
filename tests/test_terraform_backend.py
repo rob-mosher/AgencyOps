@@ -49,7 +49,7 @@ class TestSubprocessTerraformBackend:
                 "root_module": {
                     "resources": [
                         {
-                            "type": "docker_container",
+                            "type": "azurerm_container_group",
                             "values": {"name": "test", "id": "abc123"},
                         }
                     ]
@@ -84,13 +84,13 @@ class TestSubprocessTerraformBackend:
         plan_output = json.dumps({
             "type": "planned_change",
             "change": {
-                "resource": {"addr": "docker_container.workload[\"test\"]"},
+                "resource": {"addr": "azurerm_container_group.workload[\"test\"]"},
                 "action": "create",
             },
         })
         mock_run.return_value = MagicMock(returncode=0, stdout=plan_output, stderr="")
         result = backend.plan("test_plan_002")
-        assert "docker_container.workload[\"test\"]" in result["changes"]["to_create"]
+        assert "azurerm_container_group.workload[\"test\"]" in result["changes"]["to_create"]
 
     @patch("agencyops.terraform_backend.subprocess.run")
     def test_apply_requires_plan_file(self, mock_run, backend):
@@ -111,10 +111,10 @@ class TestSubprocessTerraformBackend:
     @patch("agencyops.terraform_backend.subprocess.run")
     def test_destroy_targets_resource(self, mock_run, backend):
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        result = backend.destroy("docker_container.workload[\"test\"]")
+        result = backend.destroy("azurerm_container_group.workload[\"test\"]")
         assert result["status"] == "success"
         args = mock_run.call_args[0][0]
-        assert "-target=docker_container.workload[\"test\"]" in args
+        assert "-target=azurerm_container_group.workload[\"test\"]" in args
 
     @patch("agencyops.terraform_backend.subprocess.run")
     def test_terraform_error_raised_on_failure(self, mock_run, backend):

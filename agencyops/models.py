@@ -1,7 +1,7 @@
 """Data models for AgencyOps.
 
 All Pydantic models used across the system — configuration, resource planning,
-state tracking, budgets, GPU status, and drift reconciliation.
+state tracking, budgets, and drift reconciliation. Azure-focused.
 """
 
 from __future__ import annotations
@@ -18,25 +18,24 @@ from pydantic import BaseModel, Field
 # Configuration
 # ---------------------------------------------------------------------------
 
-class BackplaneConfig(BaseModel):
-    """Hardware specs and cloud budgets for the Z230 backplane."""
+class AzureBackplaneConfig(BaseModel):
+    """Azure subscription as the infrastructure backplane."""
 
-    cpu: str = Field(default="Intel Xeon (4 cores, 8 threads)")
-    ram_gb: int = Field(default=32)
-    gpu_model: str = Field(default="NVIDIA GTX 1060")
-    gpu_vram_gb: int = Field(default=6)
-    storage_gb: int = Field(default=1000)
-    os: str = Field(default="Ubuntu 24.04 LTS")
-    aws_monthly_limit: float = Field(default=150.0)
-    azure_monthly_limit: float = Field(default=150.0)
+    subscription_id: str = Field(default="")
+    location: str = Field(default="eastus")
+    resource_group: str = Field(default="agencyops-workloads")
+    monthly_limit: float = Field(default=150.0)
 
 
 class AgencyOpsConfig(BaseModel):
     """Top-level configuration for the AgencyOps server."""
 
     data_dir: Path = Field(default_factory=lambda: Path.home() / ".agencyops")
-    terraform_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[2] / "terraform")
-    backplane: BackplaneConfig = Field(default_factory=BackplaneConfig)
+    terraform_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parent.parent / "terraform" / "workloads")
+    backplane: AzureBackplaneConfig = Field(default_factory=AzureBackplaneConfig)
+    api_key: str = Field(default="")
+    host: str = Field(default="0.0.0.0")
+    port: int = Field(default=8000)
 
     @classmethod
     def from_env(cls) -> AgencyOpsConfig:
@@ -46,14 +45,24 @@ class AgencyOpsConfig(BaseModel):
             kwargs["data_dir"] = Path(data_dir)
         if terraform_dir := os.environ.get("AGENCYOPS_TERRAFORM_DIR"):
             kwargs["terraform_dir"] = Path(terraform_dir)
+        if api_key := os.environ.get("AGENCYOPS_API_KEY"):
+            kwargs["api_key"] = api_key
+        if host := os.environ.get("AGENCYOPS_HOST"):
+            kwargs["host"] = host
+        if port := os.environ.get("AGENCYOPS_PORT"):
+            kwargs["port"] = int(port)
 
         bp_kwargs: dict = {}
-        if v := os.environ.get("AGENCYOPS_AWS_MONTHLY_LIMIT"):
-            bp_kwargs["aws_monthly_limit"] = float(v)
+        if v := os.environ.get("AGENCYOPS_AZURE_SUBSCRIPTION_ID"):
+            bp_kwargs["subscription_id"] = v
+        if v := os.environ.get("AGENCYOPS_AZURE_LOCATION"):
+            bp_kwargs["location"] = v
+        if v := os.environ.get("AGENCYOPS_AZURE_RESOURCE_GROUP"):
+            bp_kwargs["resource_group"] = v
         if v := os.environ.get("AGENCYOPS_AZURE_MONTHLY_LIMIT"):
-            bp_kwargs["azure_monthly_limit"] = float(v)
+            bp_kwargs["monthly_limit"] = float(v)
         if bp_kwargs:
-            kwargs["backplane"] = BackplaneConfig(**bp_kwargs)
+            kwargs["backplane"] = AzureBackplaneConfig(**bp_kwargs)
 
         return cls(**kwargs)
 
@@ -65,10 +74,12 @@ class AgencyOpsConfig(BaseModel):
 class ResourceRequest(BaseModel):
     """Input to the plan_resource tool."""
 
-    type: Literal["docker_container"] = "docker_container"
+    type: Literal["container_instance"] = "container_instance"
     image: str
-    gpu: bool = False
-    memory_gb: int
+    cpu: float = Field(default=1.0, description="Number of vCPUs")
+    memory_gb: float = Field(default=1.5, description="Memory in GB")
+    gpu_sku: str | None = Field(default=None, description="GPU SKU (e.g., K80, V100)")
+    gpu_count: int = Field(default=0, description="Number of GPUs")
     namespace: str
     purpose: str = Field(min_length=1, description="All infrastructure must justify its existence")
 
@@ -77,8 +88,8 @@ class PolicyValidation(BaseModel):
     """Results of pre-apply policy checks."""
 
     budget_check: Literal["PASS", "FAIL"]
-    gpu_check: Literal["PASS", "FAIL"]
     purpose_check: Literal["PASS", "FAIL"]
+    quota_check: Literal["PASS", "FAIL"]
 
 
 class ResourcePlan(BaseModel):
@@ -88,7 +99,6 @@ class ResourcePlan(BaseModel):
     resource_diff: dict
     estimated_cost: dict
     resource_impact: dict
-    gpu_available: bool
     policy_validation: PolicyValidation
     can_apply: bool
 
@@ -102,10 +112,13 @@ class ResourceState(BaseModel):
 
     id: str
     type: str
-    image: str
+    name: str
+    image: str | None = None
     status: str
-    gpu_locked: bool
-    memory_gb: int
+    location: str
+    cpu: float | None = None
+    memory_gb: float | None = None
+    gpu_sku: str | None = None
     created_at: datetime
     purpose: str
 
@@ -115,7 +128,6 @@ class InfraState(BaseModel):
 
     resources: list[ResourceState]
     total_resources: int
-    gpu_available: bool
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +135,7 @@ class InfraState(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ProviderBudget(BaseModel):
-    """Budget status for a single cloud provider."""
+    """Budget status for a cloud provider."""
 
     limit: float
     spent: float
@@ -135,7 +147,6 @@ class ProviderBudget(BaseModel):
 class BudgetStatus(BaseModel):
     """Output of the get_budget_status tool."""
 
-    aws: ProviderBudget
     azure: ProviderBudget
 
 
@@ -159,13 +170,28 @@ class ReconcileResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# GPU status
+# Cost estimation
 # ---------------------------------------------------------------------------
 
-class GpuStatus(BaseModel):
-    """Current state of the GPU lock."""
+ACI_PRICING = {
+    "cpu_per_vcpu_month": 35.04,
+    "memory_per_gb_month": 3.89,
+    "gpu_per_month": {
+        "K80": 648.0,
+        "V100": 1548.0,
+    },
+}
 
-    locked: bool
-    holder: str | None = None
-    purpose: str | None = None
-    locked_at: datetime | None = None
+
+def estimate_monthly_cost(
+    cpu: float,
+    memory_gb: float,
+    gpu_sku: str | None = None,
+    gpu_count: int = 0,
+) -> float:
+    """Estimate monthly cost for an Azure Container Instance."""
+    cost = cpu * ACI_PRICING["cpu_per_vcpu_month"]
+    cost += memory_gb * ACI_PRICING["memory_per_gb_month"]
+    if gpu_sku and gpu_count > 0:
+        cost += gpu_count * ACI_PRICING["gpu_per_month"].get(gpu_sku, 0)
+    return round(cost, 2)

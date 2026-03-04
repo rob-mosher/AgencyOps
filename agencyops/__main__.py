@@ -1,10 +1,10 @@
 """Entry point: python -m agencyops"""
 
-from agencyops.mcp_server import mcp
+from agencyops.server import mcp
 
 
 def main():
-    mcp.run(transport="stdio")
+    mcp.run(transport="streamable-http")
 
 
 if __name__ == "__main__":

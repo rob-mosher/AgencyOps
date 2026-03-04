@@ -21,11 +21,11 @@ env/
 *.swo
 
 # Terraform
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.backup
-terraform/*.tfplan
-terraform/.terraform.lock.hcl
+terraform/**/.terraform/
+terraform/**/*.tfstate
+terraform/**/*.tfstate.backup
+terraform/**/*.tfplan
+terraform/**/.terraform.lock.hcl
 
 # AgencyOps state
 .agencyops/

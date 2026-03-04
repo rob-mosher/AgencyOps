@@ -1,78 +1,89 @@
 # AgencyOps
 
-An MCP server that enables AI entities to provision infrastructure with bounded agency.
+A cloud-hosted MCP server that enables AI entities to provision Azure infrastructure with bounded agency.
 
-## What It Does
+## How It Works
 
-AgencyOps gives computational entities the ability to declare infrastructure needs and provision within constitutional limits — budgets, hardware constraints, and purpose requirements. Every decision is **deliberate** (plan before apply), **inspectable** (humans can audit), **purposeful** (all resources justify existence), and **bounded** (budgets and hardware are real constraints).
+```
+Human (optional) → Claude (claude.ai) → MCP Server (Azure) → Azure Resources
+```
+
+Claude calls the remote MCP server to declare infrastructure needs and provision within constitutional limits. Every decision is **deliberate** (plan before apply), **inspectable** (humans can audit), **purposeful** (all resources justify existence), and **bounded** (budgets are real constraints).
 
 ## MCP Tools
 
 | Tool | Description |
 |------|-------------|
-| `query_backplane()` | Returns Z230 hardware specs, GPU status, and cloud budgets |
-| `get_state()` | Queries Terraform state for currently provisioned resources |
-| `plan_resource()` | Generates a Terraform plan with policy validation |
-| `apply_plan()` | Executes a previously generated plan, locks GPU if needed |
-| `get_budget_status()` | Returns budget tracking status for all cloud providers |
-| `delete_resource()` | Destroys a resource via Terraform, releases GPU lock |
-| `reconcile()` | Detects drift between Terraform state and actual infrastructure |
+| `query_backplane()` | Returns Azure subscription info, available SKUs, and budget status |
+| `get_state()` | Queries Terraform state for currently provisioned Azure resources |
+| `plan_resource()` | Generates a Terraform plan with policy validation and cost estimation |
+| `apply_plan()` | Executes a previously generated plan, records cost to budget |
+| `get_budget_status()` | Returns Azure budget tracking status |
+| `delete_resource()` | Destroys an Azure resource via Terraform |
+| `reconcile()` | Detects drift between Terraform state and Azure reality |
 
-## Setup
+## Local Development
 
 ```bash
-# Install
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -r requirements.txt
 
 # Run tests
-pytest tests/ -v
+PYTHONPATH=. pytest tests/ -v
+
+# Run server locally
+python -m agencyops
 ```
 
-## Claude Code Integration
+## Deployment
 
-Add to your Claude Code MCP settings:
+### 1. Build and push container image
 
-```json
-{
-  "mcpServers": {
-    "agencyops": {
-      "command": "python3",
-      "args": ["-m", "agencyops"],
-      "env": {
-        "AGENCYOPS_DATA_DIR": "/path/to/.agencyops"
-      }
-    }
-  }
-}
+```bash
+docker build -t agencyops .
+
+# Tag and push to ACR
+az acr login --name <acr-name>
+docker tag agencyops <acr-name>.azurecr.io/agencyops:latest
+docker push <acr-name>.azurecr.io/agencyops:latest
 ```
+
+### 2. Deploy infrastructure
+
+```bash
+cd terraform/server
+terraform init
+terraform apply
+```
+
+### 3. Connect from claude.ai
+
+Use the MCP server URL from `terraform output mcp_server_url` with your API key.
 
 ## Configuration
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `AGENCYOPS_DATA_DIR` | `~/.agencyops` | State directory (plans, budget, GPU lock) |
-| `AGENCYOPS_TERRAFORM_DIR` | `./terraform` | Path to Terraform configs |
-| `AGENCYOPS_AWS_MONTHLY_LIMIT` | `150.0` | AWS monthly budget (USD) |
-| `AGENCYOPS_AZURE_MONTHLY_LIMIT` | `150.0` | Azure monthly budget (USD) |
+| `AGENCYOPS_DATA_DIR` | `~/.agencyops` | State directory (plans, budget) |
+| `AGENCYOPS_TERRAFORM_DIR` | `./terraform/workloads` | Path to workload Terraform configs |
+| `AGENCYOPS_API_KEY` | | API key for authentication |
+| `AGENCYOPS_AZURE_SUBSCRIPTION_ID` | | Azure subscription ID |
+| `AGENCYOPS_AZURE_LOCATION` | `eastus` | Azure region |
+| `AGENCYOPS_AZURE_RESOURCE_GROUP` | `agencyops-workloads` | Resource group for provisioned resources |
+| `AGENCYOPS_AZURE_MONTHLY_LIMIT` | `150.0` | Monthly budget (USD) |
 
 ## Architecture
 
 ```
-src/agencyops/
-├── mcp_server.py          # FastMCP server — 7 tools
-├── models.py              # Pydantic data models
-├── gpu_manager.py         # Atomic GPU locking (fcntl)
-├── budget_tracker.py      # Mock budget tracking (JSON)
-├── terraform_backend.py   # Terraform subprocess wrapper
-└── __main__.py            # Entry point (python -m agencyops)
+agencyops/
+├── server.py              # FastMCP server — 7 tools (streamable-http)
+├── models.py              # Pydantic data models (Azure-focused)
+├── budget_tracker.py      # Budget tracking with cost estimation
+├── terraform_backend.py   # Terraform subprocess wrapper (Protocol-based)
+└── __main__.py            # Entry point
 
 terraform/
-├── main.tf                # Docker provider + container resources
-├── backend.tf             # S3 + DynamoDB remote state
-├── variables.tf
-└── outputs.tf
+├── server/                # Deploys the MCP server itself (Container Apps, ACR, etc.)
+└── workloads/             # What Claude provisions (Azure Container Instances)
 ```
 
 ## Philosophy
